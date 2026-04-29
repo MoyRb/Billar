@@ -1,0 +1,2 @@
+import { PageHeader, StatCard } from '@/components/ui';
+export default function Dashboard(){ const stats=[['Mesas disponibles',0],['Mesas ocupadas',0],['Ventas del día','$0'],['Caja actual','$0'],['Productos bajos',0],['Reservaciones de hoy',0]]; return <div><PageHeader title="Dashboard" description="Resumen general del negocio" /><section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{stats.map(([t,v])=><StatCard key={t} title={String(t)} value={v} />)}</section></div>; }
