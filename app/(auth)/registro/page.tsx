@@ -1,7 +1,13 @@
-'use client';
-import { useState } from 'react';
-import { createClient } from '@/lib/supabase/client';
+import { AuthCard, RegisterForm } from '@/components/auth-components';
 
-export default function RegistroPage(){ const [email,setEmail]=useState(''); const [password,setPassword]=useState(''); const [fullName,setFullName]=useState(''); const [organizationName,setOrganizationName]=useState(''); const [msg,setMsg]=useState('');
-const submit=async(e:React.FormEvent)=>{e.preventDefault(); const supabase=createClient(); const {error}=await supabase.auth.signUp({ email, password, options: { data: { full_name: fullName, organization_name: organizationName } } }); setMsg(error?error.message:'Revisa tu correo para confirmar.');};
-return <main className="flex min-h-screen items-center justify-center p-4"><form onSubmit={submit} className="w-full max-w-md space-y-3 rounded-xl border bg-white p-6"><h1 className="text-xl font-semibold">Crear cuenta</h1><input className="w-full rounded border p-2" placeholder="Nombre completo" value={fullName} onChange={(e)=>setFullName(e.target.value)} /><input className="w-full rounded border p-2" placeholder="Nombre del negocio" value={organizationName} onChange={(e)=>setOrganizationName(e.target.value)} /><input className="w-full rounded border p-2" placeholder="Email" value={email} onChange={(e)=>setEmail(e.target.value)} /><input type="password" className="w-full rounded border p-2" placeholder="Contraseña" value={password} onChange={(e)=>setPassword(e.target.value)} /><button className="w-full rounded bg-slate-900 p-2 text-white">Crear cuenta</button>{msg && <p className="text-sm text-slate-600">{msg}</p>}</form></main>; }
+export default function RegistroPage() {
+  return <main className="relative flex min-h-screen items-center justify-center bg-rack-obsidian p-4">
+    <div className="pointer-events-none absolute inset-0 bg-radial-rack opacity-40" />
+    <div className="pointer-events-none absolute inset-0 bg-grain" />
+    <div className="relative w-full max-w-md">
+      <AuthCard title="Crear cuenta" subtitle="Comienza tu operación en RackHouse.">
+        <RegisterForm />
+      </AuthCard>
+    </div>
+  </main>;
+}
