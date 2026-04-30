@@ -13,6 +13,7 @@ type OrderRow = {
   payment_method: string | null;
   created_at: string;
   closed_at: string | null;
+  paid_at: string | null;
   pool_tables: { name: string } | { name: string }[] | null;
 };
 
@@ -58,7 +59,7 @@ export default async function Page() {
   if (!m) return null;
 
   const { data: org } = await s.from('organizations').select('name').eq('id', m.organization_id).maybeSingle();
-  const { data: orderData } = await s.from('orders').select('id,status,table_total,products_total,discount_total,total,payment_method,created_at,closed_at,pool_tables(name)').eq('organization_id', m.organization_id).order('created_at', { ascending: false });
+  const { data: orderData } = await s.from('orders').select('id,status,order_type,table_total,products_total,discount_total,total,payment_method,created_at,closed_at,paid_at,pool_tables(name)').eq('organization_id', m.organization_id).eq('order_type', 'table').order('created_at', { ascending: false });
   const { data: cutData } = await s.from('sales_cuts').select('id,cut_type,status,started_at,ended_at,total_orders,gross_total,table_total,products_total,discount_total,cash_total,card_total,transfer_total,other_total,users:created_by(email)').eq('organization_id', m.organization_id).order('created_at', { ascending: false });
   const { data: cutOrders } = await s.from('sales_cut_orders').select('sales_cut_id,order_id,orders(id,total,pool_tables(name))').eq('organization_id', m.organization_id);
 
@@ -72,6 +73,7 @@ export default async function Page() {
     paymentMethod: o.payment_method,
     createdAt: o.created_at,
     closedAt: o.closed_at,
+    paidAt: o.paid_at,
     tableName: (Array.isArray(o.pool_tables) ? o.pool_tables[0]?.name : o.pool_tables?.name) ?? 'Sin mesa',
   }));
 
@@ -102,5 +104,5 @@ export default async function Page() {
     orders: grouped.get(c.id) ?? [],
   }));
 
-  return <div className='space-y-4'><PageHeader title='Ventas / Cortes' description='Genera cortes de turno y cortes diarios de ventas pagadas.' /><VentasClient initialOrders={orders} initialCuts={cuts} businessName={org?.name} userEmail={user.email ?? '—'} /></div>;
+  return <div className='space-y-4'><PageHeader title='Ventas / Cortes' description='Genera cortes de turno y cortes diarios de ventas pagadas.' /><VentasClient initialOrders={orders} initialCuts={cuts} businessName={org?.name} userEmail={user.email ?? '—'} organizationId={m.organization_id} /></div>;
 }
