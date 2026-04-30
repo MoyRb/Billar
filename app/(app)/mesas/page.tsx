@@ -51,5 +51,7 @@ export default async function Mesas() {
     return { ...table, currentSession, currentOrder };
   });
 
-  return <MesasClient initialTables={initialTables} organizationId={organizationId} userId={user.id} />;
+  const { data: settings } = await supabase.from('settings').select('default_hourly_rate').eq('organization_id', organizationId).maybeSingle();
+
+  return <MesasClient initialTables={initialTables} organizationId={organizationId} userId={user.id} defaultHourlyRate={Number(settings?.default_hourly_rate ?? 0)} />;
 }

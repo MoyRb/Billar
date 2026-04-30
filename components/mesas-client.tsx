@@ -18,7 +18,7 @@ type TableForm = { name: string; table_type: string; hourly_rate: string; status
 const ACTIVE_SESSION_STATUSES: TableSession['status'][] = ['active', 'paused', 'pending_payment'];
 const ADMIN_STATUSES: TableStatus[] = ['available', 'occupied', 'paused', 'pending_payment', 'maintenance', 'reserved', 'out_of_service'];
 
-export function MesasClient({ initialTables, organizationId, userId }: { initialTables: TableWithCurrentSession[]; organizationId: string; userId: string }) {
+export function MesasClient({ initialTables, organizationId, userId, defaultHourlyRate }: { initialTables: TableWithCurrentSession[]; organizationId: string; userId: string; defaultHourlyRate: number }) {
   const [tables, setTables] = useState(initialTables);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -36,11 +36,11 @@ export function MesasClient({ initialTables, organizationId, userId }: { initial
   const [qtyByProduct, setQtyByProduct] = useState<Record<string, number>>({});
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingTable, setEditingTable] = useState<TableWithCurrentSession | null>(null);
-  const [form, setForm] = useState<TableForm>({ name: '', table_type: '', hourly_rate: '0', status: 'available', is_active: true });
+  const [form, setForm] = useState<TableForm>({ name: '', table_type: '', hourly_rate: String(defaultHourlyRate), status: 'available', is_active: true });
   const [now, setNow] = useState(() => Date.now());
 
   const supabase = useMemo(() => createClient(), []);
-  const setFormFromTable = (table?: PoolTable) => setForm(table ? { name: table.name, table_type: table.table_type, hourly_rate: String(table.hourly_rate), status: table.status === 'occupied' || table.status === 'paused' || table.status === 'pending_payment' ? 'available' : table.status, is_active: table.is_active } : { name: '', table_type: '', hourly_rate: '0', status: 'available', is_active: true });
+  const setFormFromTable = (table?: PoolTable) => setForm(table ? { name: table.name, table_type: table.table_type, hourly_rate: String(table.hourly_rate), status: table.status === 'occupied' || table.status === 'paused' || table.status === 'pending_payment' ? 'available' : table.status, is_active: table.is_active } : { name: '', table_type: '', hourly_rate: String(defaultHourlyRate), status: 'available', is_active: true });
 
   useEffect(() => {
     const interval = window.setInterval(() => setNow(Date.now()), 1000);
@@ -131,7 +131,8 @@ export function MesasClient({ initialTables, organizationId, userId }: { initial
     if (!Number.isFinite(hourlyRate) || hourlyRate < 0) return setError('La tarifa por hora debe ser mayor o igual a 0.');
     const duplicate = tables.find((t) => t.name.trim().toLowerCase() === form.name.trim().toLowerCase() && t.id !== editingTable?.id);
     if (duplicate) return setError('Ya existe una mesa con ese nombre.');
-    const payload = { name: form.name.trim(), table_type: form.table_type.trim() || 'general', hourly_rate: hourlyRate, is_active: form.is_active };
+    const rateToUse = hourlyRate === 0 && defaultHourlyRate > 0 ? defaultHourlyRate : hourlyRate;
+    const payload = { name: form.name.trim(), table_type: form.table_type.trim() || 'general', hourly_rate: rateToUse, is_active: form.is_active };
     if (editingTable) {
       await supabase.from('pool_tables').update({ ...payload, status: ['occupied', 'paused', 'pending_payment'].includes(editingTable.status) ? editingTable.status : form.status }).eq('id', editingTable.id).eq('organization_id', organizationId);
       setSuccess('Mesa actualizada.');
