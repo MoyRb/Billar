@@ -114,7 +114,6 @@ export function Sidebar({ businessName }: { businessName: string }) {
   return (
     <aside className="border-r border-rack-gold/10 bg-rack-shell/90 p-5 backdrop-blur-sm">
       <div className="mb-8 rounded-2xl border border-rack-gold/20 bg-rack-panel p-4 shadow-rack">
-        <p className="text-xs uppercase tracking-[0.25em] text-rack-gold/70">Producto SaaS</p>
         <p className="text-2xl font-semibold text-rack-cream">RackHouse</p>
         <p className="mt-2 text-xs text-rack-cream/65">Negocio: {businessName}</p>
       </div>
