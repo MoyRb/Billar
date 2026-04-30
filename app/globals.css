@@ -9,3 +9,36 @@
 body {
   @apply bg-rack-obsidian text-rack-cream antialiased;
 }
+
+@media print {
+  @page {
+    size: 48mm auto;
+    margin: 2mm;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  .thermal-ticket,
+  .thermal-ticket * {
+    visibility: visible !important;
+  }
+
+  .thermal-ticket {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 48mm;
+    background: white !important;
+    color: black !important;
+    font-family: monospace;
+    font-size: 10px;
+    box-shadow: none !important;
+    border: 0 !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+}
