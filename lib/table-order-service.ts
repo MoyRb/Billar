@@ -24,14 +24,19 @@ export async function closeTableSession(params: CloseTableSessionParams): Promis
   const { supabase, organizationId, poolTableId, userId, session, chargedMinutes, tableTotal } = params;
   const now = new Date().toISOString();
 
-  const { error: sessionUpdateError } = await supabase
+  const { data: activeSession, error: sessionLookupError } = await supabase
     .from('table_sessions')
-    .update({ status: 'pending_payment', ended_at: now, charged_minutes: chargedMinutes, table_total: tableTotal, closed_by: userId, updated_at: now })
+    .select('id,status')
     .eq('id', session.id)
-    .eq('organization_id', organizationId);
-  if (sessionUpdateError) {
-    console.error('[mesas/close] falla update table_sessions', sessionUpdateError);
-    throw sessionUpdateError;
+    .eq('organization_id', organizationId)
+    .in('status', ['active', 'paused'])
+    .maybeSingle();
+  if (sessionLookupError) {
+    console.error('[mesas/close] falla lookup table_session', sessionLookupError);
+    throw sessionLookupError;
+  }
+  if (!activeSession) {
+    throw new Error('La sesión de mesa no está activa para cierre.');
   }
 
   const { data: matchedOrder, error: orderLookupError } = await supabase
@@ -48,48 +53,82 @@ export async function closeTableSession(params: CloseTableSessionParams): Promis
     throw orderLookupError;
   }
 
-  const { data: orderItems, error: itemsError } = await supabase
-    .from('order_items')
-    .select('line_total,status')
-    .eq('organization_id', organizationId)
-    .eq('table_session_id', session.id)
-    .eq('status', 'active');
-  if (itemsError) {
-    console.error('[mesas/close] falla lookup order_items', itemsError);
-    throw itemsError;
-  }
-
-  const productsTotal = calculateProductsTotal((orderItems ?? []).map((item) => ({ line_total: Number(item.line_total ?? 0), status: 'active' as const })));
-  const discountTotal = 0;
-  const total = calculateOrderTotal(tableTotal, productsTotal, discountTotal);
-
-  const orderPayload = {
+  const baseOrderPayload = {
     status: 'pending_payment',
     order_type: 'table',
     organization_id: organizationId,
     pool_table_id: poolTableId,
     table_session_id: session.id,
-    table_total: tableTotal,
-    products_total: productsTotal,
-    discount_total: discountTotal,
-    total,
     closed_at: now,
     updated_at: now,
   };
 
-  if (matchedOrder) {
-    const { error: orderUpdateError } = await supabase.from('orders').update(orderPayload).eq('id', matchedOrder.id).eq('organization_id', organizationId);
-    if (orderUpdateError) {
-      console.error('[mesas/close] falla update orders', orderUpdateError);
-      throw orderUpdateError;
-    }
-  } else {
-    console.error('[mesas/close] no se encontró order, creando nueva');
-    const { error: orderInsertError } = await supabase.from('orders').insert(orderPayload);
+  let orderId = matchedOrder?.id;
+  if (!orderId) {
+    const { data: createdOrder, error: orderInsertError } = await supabase
+      .from('orders')
+      .insert(baseOrderPayload)
+      .select('id')
+      .single();
     if (orderInsertError) {
       console.error('[mesas/close] falla insert orders', orderInsertError);
       throw orderInsertError;
     }
+    orderId = createdOrder.id;
+  }
+
+  const { data: orderItems, error: itemsError } = await supabase
+    .from('order_items')
+    .select('id,line_total,quantity,status')
+    .eq('organization_id', organizationId)
+    .eq('order_id', orderId)
+    .or('status.eq.active,status.is.null');
+
+  if (itemsError) {
+    console.error('[mesas/close] falla lookup order_items', {
+      error: itemsError,
+      message: itemsError?.message,
+      details: itemsError?.details,
+      hint: itemsError?.hint,
+      code: itemsError?.code,
+      orderId,
+      sessionId: session.id,
+      organizationId,
+    });
+    throw itemsError;
+  }
+
+  const productsTotal = calculateProductsTotal(
+    (orderItems ?? []).map((item) => ({
+      line_total: Number(item.line_total ?? 0),
+      status: 'active' as const,
+    })),
+  );
+  const discountTotal = 0;
+  const total = calculateOrderTotal(tableTotal, productsTotal, discountTotal);
+
+  const orderPayload = {
+    ...baseOrderPayload,
+    table_total: tableTotal,
+    products_total: productsTotal,
+    discount_total: discountTotal,
+    total,
+  };
+
+  const { error: orderUpdateError } = await supabase.from('orders').update(orderPayload).eq('id', orderId).eq('organization_id', organizationId);
+  if (orderUpdateError) {
+    console.error('[mesas/close] falla update orders', orderUpdateError);
+    throw orderUpdateError;
+  }
+
+  const { error: sessionUpdateError } = await supabase
+    .from('table_sessions')
+    .update({ status: 'pending_payment', ended_at: now, charged_minutes: chargedMinutes, table_total: tableTotal, closed_by: userId, updated_at: now })
+    .eq('id', session.id)
+    .eq('organization_id', organizationId);
+  if (sessionUpdateError) {
+    console.error('[mesas/close] falla update table_sessions', sessionUpdateError);
+    throw sessionUpdateError;
   }
 
   const { error: tableUpdateError } = await supabase.from('pool_tables').update({ status: 'pending_payment', updated_at: now }).eq('id', poolTableId).eq('organization_id', organizationId);
