@@ -1,15 +1,13 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { PageHeader, StatusBadge } from '@/components/ui';
-import type { PoolTable, TableSession, TableStatus, TableWithCurrentSession } from '@/lib/types';
-import { calculateChargeableSeconds, calculateChargedMinutes, calculateTableTotal, formatCurrency, formatDuration } from '@/lib/table-session-utils';
+import type { OrderItem, PoolTable, TableOrder, TableSession, TableStatus, TableWithCurrentSession } from '@/lib/types';
+import { calculateChargeableSeconds, calculateChargedMinutes, calculateOrderTotal, calculateProductsTotal, calculateTableTotal, formatCurrency, formatDuration } from '@/lib/table-session-utils';
 
 type Action = 'start' | 'pause' | 'resume' | 'close' | 'pay' | 'set_maintenance' | 'set_out_of_service' | 'reactivate' | 'delete';
 type Product = { id: string; name: string; sku: string | null; barcode: string | null; sale_price: number; cost_price: number; stock: number; is_active: boolean };
-type OrderItem = { id: string; product_name: string; quantity: number; unit_price: number; line_total: number; status: 'active' | 'cancelled' };
-type TableOrder = { id: string; status: string; table_total: number; products_total: number; discount_total: number; total: number; order_items: OrderItem[] };
 
 type TableForm = { name: string; table_type: string; hourly_rate: string; status: Extract<TableStatus, 'available' | 'maintenance' | 'out_of_service' | 'reserved'>; is_active: boolean };
 
@@ -31,9 +29,15 @@ export function MesasClient({ initialTables, organizationId, userId }: { initial
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingTable, setEditingTable] = useState<TableWithCurrentSession | null>(null);
   const [form, setForm] = useState<TableForm>({ name: '', table_type: '', hourly_rate: '0', status: 'available', is_active: true });
+  const [now, setNow] = useState(() => Date.now());
 
   const supabase = useMemo(() => createClient(), []);
   const setFormFromTable = (table?: PoolTable) => setForm(table ? { name: table.name, table_type: table.table_type, hourly_rate: String(table.hourly_rate), status: table.status === 'occupied' || table.status === 'paused' || table.status === 'pending_payment' ? 'available' : table.status, is_active: table.is_active } : { name: '', table_type: '', hourly_rate: '0', status: 'available', is_active: true });
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   const refresh = async () => {
     const { data: tableData, error: tablesError } = await supabase.from('pool_tables').select('*').eq('organization_id', organizationId).order('name');
@@ -41,8 +45,15 @@ export function MesasClient({ initialTables, organizationId, userId }: { initial
     const ids = (tableData ?? []).map((t) => t.id);
     const { data: sessions, error: sessionsError } = await supabase.from('table_sessions').select('*').in('pool_table_id', ids.length ? ids : ['00000000-0000-0000-0000-000000000000']).in('status', ACTIVE_SESSION_STATUSES);
     if (sessionsError) throw sessionsError;
-    const byTable = new Map((sessions ?? []).map((s) => [s.pool_table_id, s]));
-    setTables((tableData ?? []).map((t) => ({ ...t, currentSession: byTable.get(t.id) ?? null })));
+    const sessionIds = (sessions ?? []).map((session) => session.id);
+    const { data: orders } = await supabase.from('orders').select('id,status,table_total,products_total,discount_total,total,table_session_id,order_items(id,product_name,quantity,unit_price,line_total,status)').eq('organization_id', organizationId).in('table_session_id', sessionIds.length ? sessionIds : ['00000000-0000-0000-0000-000000000000']).in('status', ['open', 'pending_payment']).order('created_at', { ascending: false });
+    const byTable = new Map((sessions ?? []).map((session) => [session.pool_table_id, session]));
+    const bySessionOrder = new Map((orders ?? []).map((openOrder) => [openOrder.table_session_id, openOrder as unknown as TableOrder & { table_session_id: string }]));
+    setTables((tableData ?? []).map((table) => {
+      const currentSession = byTable.get(table.id) ?? null;
+      const currentOrder = currentSession ? bySessionOrder.get(currentSession.id) ?? null : null;
+      return { ...table, currentSession, currentOrder };
+    }));
   };
 
   const loadAccount = async (table: TableWithCurrentSession) => {
@@ -138,7 +149,7 @@ export function MesasClient({ initialTables, organizationId, userId }: { initial
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} /> Mostrar inactivas</label>
       </div>
     </section>
-    <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{visibleTables.map((table) => { const s = table.currentSession; const tableRunning = s?.status === 'pending_payment' ? s.table_total : s ? calculateTableTotal(calculateChargedMinutes(calculateChargeableSeconds(s)), s.hourly_rate) : 0; const productsTotal = table.id === accountTable?.id ? Number(order?.products_total ?? 0) : 0; return <article key={table.id} className="rounded-2xl border border-rack-gold/10 bg-rack-panel p-4"><div className="flex items-center justify-between"><h3 className="text-lg font-semibold">{table.name}</h3><StatusBadge status={table.status} /></div><p className="text-sm">Tiempo: {s ? formatDuration(calculateChargeableSeconds(s)) : '--:--'}</p><p className="text-sm">Mesa: {formatCurrency(tableRunning)}</p><p className="text-sm">Productos: {formatCurrency(productsTotal)}</p><p className="text-sm">Total: {formatCurrency(tableRunning + productsTotal)}</p><div className="mt-3 flex flex-wrap gap-2 [&_button]:rounded-lg [&_button]:border [&_button]:border-rack-gold/40 [&_button]:px-2 [&_button]:py-1 [&_button]:text-sm">{table.status==='available'&&<button onClick={()=>runAction(table,'start')}>Iniciar</button>}{['occupied','paused','pending_payment'].includes(table.status)&&<button onClick={async()=>{setAccountTable(table);await loadAccount(table);}}>{table.status==='pending_payment'?'Ver cuenta':'Cuenta'}</button>}{['occupied','paused'].includes(table.status)&&<button onClick={async()=>{setAccountTable(table);await loadAccount(table);}}>Agregar producto</button>}{table.status==='occupied'&&<button onClick={()=>runAction(table,'pause')}>Pausar</button>}{table.status==='paused'&&<button onClick={()=>runAction(table,'resume')}>Reanudar</button>}{['occupied','paused'].includes(table.status)&&<button onClick={()=>runAction(table,'close')}>Cerrar</button>}{table.status==='pending_payment'&&<button onClick={()=>runAction(table,'pay')}>Cobrar</button>}</div>
+    <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{visibleTables.map((table) => { const s = table.currentSession; const tableRunning = s?.status === 'pending_payment' ? s.table_total : s ? calculateTableTotal(calculateChargedMinutes(calculateChargeableSeconds(s, new Date(now))), s.hourly_rate) : 0; const productsTotal = table.id === accountTable?.id ? Number(order?.products_total ?? 0) : Number(table.currentOrder?.products_total ?? 0); return <article key={table.id} className="rounded-2xl border border-rack-gold/10 bg-rack-panel p-4"><div className="flex items-center justify-between"><h3 className="text-lg font-semibold">{table.name}</h3><StatusBadge status={table.status} /></div><p className="text-sm">Tiempo: {s ? formatDuration(calculateChargeableSeconds(s, new Date(now))) : '--:--'}</p><p className="text-sm">Mesa: {formatCurrency(tableRunning)}</p><p className="text-sm">Productos: {formatCurrency(productsTotal)}</p><p className="text-sm">Total: {formatCurrency(calculateOrderTotal(tableRunning, productsTotal, Number(table.currentOrder?.discount_total ?? 0)))}</p><div className="mt-3 flex flex-wrap gap-2 [&_button]:rounded-lg [&_button]:border [&_button]:border-rack-gold/40 [&_button]:px-2 [&_button]:py-1 [&_button]:text-sm">{table.status==='available'&&<button onClick={()=>runAction(table,'start')}>Iniciar</button>}{['occupied','paused','pending_payment'].includes(table.status)&&<button onClick={async()=>{setAccountTable(table);await loadAccount(table);}}>{table.status==='pending_payment'?'Ver cuenta':'Cuenta'}</button>}{['occupied','paused'].includes(table.status)&&<button onClick={async()=>{setAccountTable(table);await loadAccount(table);}}>Agregar producto</button>}{table.status==='occupied'&&<button onClick={()=>runAction(table,'pause')}>Pausar</button>}{table.status==='paused'&&<button onClick={()=>runAction(table,'resume')}>Reanudar</button>}{['occupied','paused'].includes(table.status)&&<button onClick={()=>runAction(table,'close')}>Cerrar</button>}{table.status==='pending_payment'&&<button onClick={()=>runAction(table,'pay')}>Cobrar</button>}</div>
       <details className="mt-2 text-sm"><summary className="cursor-pointer text-rack-gold">Más acciones</summary><div className="mt-2 flex flex-wrap gap-2 [&_button]:rounded [&_button]:border [&_button]:border-rack-gold/30 [&_button]:px-2 [&_button]:py-1"><button onClick={()=>{setEditingTable(table);setFormFromTable(table);setIsCreateOpen(true);}}>Editar</button>{table.status==='available'&&<><button onClick={()=>runAction(table,'set_maintenance')}>Mantenimiento</button><button onClick={()=>runAction(table,'set_out_of_service')}>Fuera de servicio</button><button onClick={()=>runAction(table,'delete')}>Eliminar</button></>}{table.status==='maintenance'&&<><button onClick={()=>runAction(table,'reactivate')}>Reactivar</button><button onClick={()=>runAction(table,'set_out_of_service')}>Fuera de servicio</button><button onClick={()=>runAction(table,'delete')}>Eliminar</button></>}{table.status==='out_of_service'&&<><button onClick={()=>runAction(table,'reactivate')}>Reactivar</button><button onClick={()=>runAction(table,'delete')}>Eliminar</button></>}</div></details></article>; })}</section>
     {isCreateOpen && <div className="fixed inset-0 z-50 bg-black/70 p-4"><div className="mx-auto max-w-lg rounded-2xl border border-rack-gold/20 bg-rack-panel p-4 space-y-2"><h3 className="text-lg font-semibold">{editingTable ? 'Editar mesa' : 'Nueva mesa'}</h3><input className="w-full rounded bg-rack-shell/60 p-2" placeholder="Nombre" value={form.name} onChange={(e)=>setForm((s)=>({...s,name:e.target.value}))} /><input className="w-full rounded bg-rack-shell/60 p-2" placeholder="Tipo de mesa" value={form.table_type} onChange={(e)=>setForm((s)=>({...s,table_type:e.target.value}))} /><input type="number" min={0} className="w-full rounded bg-rack-shell/60 p-2" placeholder="Tarifa por hora" value={form.hourly_rate} onChange={(e)=>setForm((s)=>({...s,hourly_rate:e.target.value}))} />{editingTable && !['occupied','paused','pending_payment'].includes(editingTable.status) && <select className="w-full rounded bg-rack-shell/60 p-2" value={form.status} onChange={(e)=>setForm((s)=>({...s,status:e.target.value as TableForm['status']}))}>{['available','maintenance','reserved','out_of_service'].map((s)=><option key={s} value={s}>{s}</option>)}</select>}<label className="flex items-center gap-2"><input type="checkbox" checked={form.is_active} onChange={(e)=>setForm((s)=>({...s,is_active:e.target.checked}))} /> Activa</label><div className="flex gap-2"><button className="rounded border border-rack-gold/40 px-3 py-2" onClick={()=>void saveTable()}>Guardar</button><button className="rounded border border-rack-gold/40 px-3 py-2" onClick={()=>{setIsCreateOpen(false);setEditingTable(null);}}>Cancelar</button></div></div></div>}
   </div>;

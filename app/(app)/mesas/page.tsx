@@ -33,8 +33,23 @@ export default async function Mesas() {
     .in('pool_table_id', tableIds.length ? tableIds : ['00000000-0000-0000-0000-000000000000'])
     .in('status', ['active', 'paused', 'pending_payment']);
 
-  const byTable = new Map((sessions as TableSession[] | null ?? []).map((session) => [session.pool_table_id, session]));
-  const initialTables: TableWithCurrentSession[] = (tables ?? []).map((table) => ({ ...table, currentSession: byTable.get(table.id) ?? null }));
+  const sessionRows = (sessions as TableSession[] | null ?? []);
+  const sessionIds = sessionRows.map((session) => session.id);
+  const { data: orders } = await supabase
+    .from('orders')
+    .select('id,status,table_total,products_total,discount_total,total,table_session_id,order_items(id,product_name,quantity,unit_price,line_total,status)')
+    .eq('organization_id', organizationId)
+    .in('table_session_id', sessionIds.length ? sessionIds : ['00000000-0000-0000-0000-000000000000'])
+    .in('status', ['open', 'pending_payment'])
+    .order('created_at', { ascending: false });
+
+  const byTable = new Map(sessionRows.map((session) => [session.pool_table_id, session]));
+  const bySessionOrder = new Map((orders ?? []).map((openOrder) => [openOrder.table_session_id, openOrder]));
+  const initialTables: TableWithCurrentSession[] = (tables ?? []).map((table) => {
+    const currentSession = byTable.get(table.id) ?? null;
+    const currentOrder = currentSession ? bySessionOrder.get(currentSession.id) ?? null : null;
+    return { ...table, currentSession, currentOrder };
+  });
 
   return <MesasClient initialTables={initialTables} organizationId={organizationId} userId={user.id} />;
 }

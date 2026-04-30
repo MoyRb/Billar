@@ -13,12 +13,24 @@ export function calculateChargeableSeconds(session: TableSession, now = new Date
   return Math.max(0, elapsed - session.total_paused_seconds);
 }
 
+export function calculateElapsedSeconds(session: TableSession, now = new Date()): number {
+  return calculateChargeableSeconds(session, now);
+}
+
 export function calculateChargedMinutes(seconds: number): number {
   return Math.ceil(Math.max(0, seconds) / 60);
 }
 
 export function calculateTableTotal(minutes: number, hourlyRate: number): number {
   return Number(((minutes / 60) * hourlyRate).toFixed(2));
+}
+
+export function calculateProductsTotal(items: { status: 'active' | 'cancelled'; line_total: number }[]): number {
+  return Number(items.filter((item) => item.status === 'active').reduce((acc, item) => acc + Number(item.line_total), 0).toFixed(2));
+}
+
+export function calculateOrderTotal(tableTotal: number, productsTotal: number, discountTotal: number): number {
+  return Number((tableTotal + productsTotal - discountTotal).toFixed(2));
 }
 
 export function formatDuration(seconds: number): string {
