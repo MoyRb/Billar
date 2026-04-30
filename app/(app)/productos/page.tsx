@@ -9,9 +9,6 @@ export default async function ProductosPage() {
   const { data: membership } = await supabase.from('organization_members').select('organization_id').eq('user_id', user.id).maybeSingle();
   if (!membership) return null;
   const orgId = membership.organization_id;
-  const [{ data: products }, { data: categories }] = await Promise.all([
-    supabase.from('products').select('*').eq('organization_id', orgId).order('name'),
-    supabase.from('product_categories').select('*').eq('organization_id', orgId).order('name'),
-  ]);
-  return <ProductosClient organizationId={orgId} initialProducts={products ?? []} categories={categories ?? []} />;
+  const { data: products } = await supabase.from('products').select('*').eq('organization_id', orgId).order('name');
+  return <ProductosClient organizationId={orgId} initialProducts={products ?? []} />;
 }
