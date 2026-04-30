@@ -1,3 +1,6 @@
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
@@ -55,7 +58,7 @@ export async function GET() {
   const { data: cutData, error: cutError } = await supabase.from('sales_cuts').select('id,cut_type,status,started_at,ended_at,total_orders,gross_total,table_total,products_total,discount_total,cash_total,card_total,transfer_total,other_total,users:created_by(email)').eq('organization_id', organizationId).eq('status', 'closed').order('ended_at', { ascending: false });
   if (cutError) return NextResponse.json({ error: cutError.message, details: cutError.details, hint: cutError.hint, code: cutError.code }, { status: 400 });
 
-  const { data: cutOrders, error: cutOrdersError } = await supabase.from('sales_cut_orders').select('sales_cut_id,order_id,cut_type,orders(id,total,pool_tables(name))').eq('organization_id', organizationId);
+  const { data: cutOrders, error: cutOrdersError } = await supabase.from('sales_cut_orders').select('sales_cut_id,order_id,cut_type,orders(id,total,pool_tables(name))').eq('organization_id', organizationId).eq('cut_type', 'shift');
   if (cutOrdersError) return NextResponse.json({ error: cutOrdersError.message, details: cutOrdersError.details, hint: cutOrdersError.hint, code: cutOrdersError.code }, { status: 400 });
 
   const { data: paidOrders, error: paidOrdersError } = await supabase.from('orders').select('id,status,table_total,products_total,discount_total,total,payment_method,created_at,closed_at,paid_at,pool_tables(name)').eq('organization_id', organizationId).eq('status', 'paid').eq('order_type', 'table').order('created_at', { ascending: false });
@@ -69,9 +72,7 @@ export async function GET() {
     grouped.set(rel.sales_cut_id, list);
   }
 
-  const shiftCutOrderIds = new Set(
-    (cutOrders ?? []).filter((row) => row.cut_type === 'shift').map((row) => row.order_id),
-  );
+  const shiftCutOrderIds = new Set((cutOrders ?? []).map((row) => row.order_id));
 
   const cuts = ((cutData ?? []) as CutRow[]).map((c) => ({
     id: c.id,
@@ -92,7 +93,7 @@ export async function GET() {
     orders: grouped.get(c.id) ?? [],
   }));
 
-  const pendingShiftOrders = ((paidOrders ?? []) as PaidOrderRow[]).filter((order) => !shiftCutOrderIds.has(order.id)).map((o) => ({
+  const pendingOrders = ((paidOrders ?? []) as PaidOrderRow[]).filter((order) => !shiftCutOrderIds.has(order.id)).map((o) => ({
     id: o.id,
     status: o.status,
     tableTotal: Number(o.table_total ?? 0),
@@ -106,8 +107,14 @@ export async function GET() {
     tableName: (Array.isArray(o.pool_tables) ? o.pool_tables[0]?.name : o.pool_tables?.name) ?? 'Sin mesa',
   })).sort((a, b) => toDate(b.paidAt ?? b.closedAt ?? b.createdAt).getTime() - toDate(a.paidAt ?? a.closedAt ?? a.createdAt).getTime());
 
-  console.debug('[ventas/debug] snapshot', { organizationId, cutsLoaded: cuts.length, paidOrdersFound: paidOrders?.length ?? 0, pendingShiftOrdersFound: pendingShiftOrders.length });
-  return NextResponse.json({ cuts, pendingShiftOrders });
+  console.debug('[api/sales-cuts][GET]', {
+    organizationId,
+    cutsCount: cuts.length,
+    paidOrdersCount: paidOrders?.length ?? 0,
+    shiftCutOrderIdsCount: shiftCutOrderIds.size,
+    pendingOrdersCount: pendingOrders.length,
+  });
+  return NextResponse.json({ cuts, pendingOrders });
 }
 
 export async function POST(request: Request) {

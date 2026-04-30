@@ -43,7 +43,7 @@ const money = (v: number) => new Intl.NumberFormat('es-MX', { style: 'currency',
 const startsToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
 const getOrderPaidDate = (order: OrderView) => new Date(order.paidAt ?? order.closedAt ?? order.createdAt);
 
-export default function VentasClient({ initialOrders, initialCuts, businessName, userEmail, organizationId }: { initialOrders: OrderView[]; initialCuts: SalesCutView[]; businessName?: string | null; userEmail: string; organizationId: string; }) {
+export default function VentasClient({ initialOrders, initialCuts, businessName, userEmail, }: { initialOrders: OrderView[]; initialCuts: SalesCutView[]; businessName?: string | null; userEmail: string; organizationId: string; }) {
   const router = useRouter();
   const [orders, setOrders] = useState(initialOrders);
   const [cuts, setCuts] = useState(initialCuts);
@@ -55,48 +55,27 @@ export default function VentasClient({ initialOrders, initialCuts, businessName,
   const loadFromSupabase = useCallback(async () => {
     const response = await fetch('/api/sales-cuts', { method: 'GET', cache: 'no-store' });
     if (!response.ok) return;
-    const data = (await response.json()) as { cuts: SalesCutView[]; pendingShiftOrders: OrderView[] };
+    const data = (await response.json()) as { cuts: SalesCutView[]; pendingOrders: OrderView[] };
     setCuts(data.cuts);
-    setOrders(data.pendingShiftOrders);
-    console.debug('[ventas/debug] cuts loaded from Supabase', { organizationId, cuts: data.cuts.length, pendingShiftOrders: data.pendingShiftOrders.length });
-  }, [organizationId]);
+    setOrders(data.pendingOrders);
+    console.debug('[ventas-client] loaded', {
+      cutsCount: data.cuts.length,
+      pendingOrdersCount: data.pendingOrders.length,
+      cuts: data.cuts,
+      pendingOrders: data.pendingOrders,
+    });
+  }, []);
 
-  useEffect(() => { void loadFromSupabase(); }, [loadFromSupabase]);
+  useEffect(() => {
+    console.debug('[ventas-client] mount -> loadFromSupabase');
+    void loadFromSupabase();
+  }, [loadFromSupabase]);
 
   const pendingShiftOrders = useMemo(() => {
     const now = new Date();
     const startToday = startsToday();
-    const todayShiftCuts = cuts
-      .filter((cut) => cut.cutType === 'shift' && cut.status === 'closed' && new Date(cut.endedAt) >= startToday && new Date(cut.endedAt) <= now)
-      .sort((a, b) => new Date(a.endedAt).getTime() - new Date(b.endedAt).getTime());
-    const lastShiftCut = todayShiftCuts.at(-1);
-    const rangeStart = lastShiftCut ? new Date(lastShiftCut.endedAt) : startToday;
-
-    const shiftOrderIds = new Set(
-      cuts
-        .filter((cut) => cut.cutType === 'shift' && cut.status === 'closed')
-        .flatMap((cut) => cut.orders.map((order) => order.id)),
-    );
-
-    const paidOrders = orders;
-    const pending = paidOrders.filter((order) => {
-      const paidDate = getOrderPaidDate(order);
-      if (paidDate < rangeStart || paidDate > now) return false;
-      return !shiftOrderIds.has(order.id);
-    });
-
-    console.debug('[ventas/debug] pending shift orders', {
-      organizationId,
-      lastShiftCut: lastShiftCut?.id ?? null,
-      rangeStart: rangeStart.toISOString(),
-      rangeEnd: now.toISOString(),
-      paidOrdersFound: paidOrders.length,
-      pendingOrdersFound: pending.length,
-      excludedBySalesCutOrders: paidOrders.length - pending.length
-    });
-
-    return { pending, rangeStart, rangeEnd: now };
-  }, [cuts, orders, organizationId]);
+    return { pending: orders, rangeStart: startToday, rangeEnd: now };
+  }, [orders]);
 
 
   const computeCutPreview = (cutType: 'shift' | 'day') => {
