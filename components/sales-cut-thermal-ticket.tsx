@@ -33,9 +33,9 @@ export function SalesCutThermalTicket({ businessName, data }: { businessName?: s
     <article className="thermal-ticket mx-auto w-[48mm] rounded border border-black/20 bg-white p-2 font-mono text-[10px] leading-tight text-black shadow-none">
       <p className="text-center text-[11px] font-bold">RACKHOUSE</p>
       <p className="text-center">{businessName?.trim() || 'Billar'}</p>
-      <p className="mt-1 text-center">CORTE DE VENTAS</p>
+      <p className="mt-1 text-center">{data.cutType === 'shift' ? 'CORTE DE TURNO' : 'CORTE DEL DÍA'}</p>
       <p className="my-1">------------------------</p>
-      <p>Folio corte: CUT-{data.id.slice(0, 4).toUpperCase()}</p>
+      <p>Folio: CUT-{data.id.slice(0, 4).toUpperCase()}</p>
       <p>Tipo: {data.cutType === 'shift' ? 'Turno' : 'Día'}</p>
       <p>Fecha: {date(data.endedAt)}</p>
       <p>Inicio: {time(data.startedAt)}</p>
