@@ -7,11 +7,7 @@ const navItems = [
   { key: 'mesas', label: 'Mesas' },
   { key: 'ventas', label: 'Ventas' },
   { key: 'productos', label: 'Productos' },
-  { key: 'inventario', label: 'Inventario' },
-  { key: 'caja', label: 'Caja' },
-  { key: 'clientes', label: 'Clientes' },
-  { key: 'reservaciones', label: 'Reservaciones' },
-  { key: 'reportes', label: 'Reportes' },
+  { key: 'activos', label: 'Activos' },
   { key: 'configuracion', label: 'Configuración' },
 ] as const;
 
