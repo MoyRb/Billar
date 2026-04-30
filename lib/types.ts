@@ -1,4 +1,4 @@
-export type TableStatus = 'available' | 'occupied' | 'paused' | 'pending_payment' | 'maintenance' | 'reserved';
+export type TableStatus = 'available' | 'occupied' | 'paused' | 'pending_payment' | 'maintenance' | 'reserved' | 'out_of_service';
 export type SessionStatus = 'active' | 'paused' | 'pending_payment' | 'paid' | 'cancelled';
 
 export interface PoolTable {
