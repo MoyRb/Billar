@@ -28,6 +28,7 @@ type PaidOrderRow = {
 
 type CutRow = {
   id: string;
+  organization_id: string;
   cut_type: 'shift' | 'day';
   status: 'closed' | 'cancelled';
   started_at: string;
@@ -41,7 +42,8 @@ type CutRow = {
   card_total: number;
   transfer_total: number;
   other_total: number;
-  users: { email: string | null } | { email: string | null }[] | null;
+  created_by: string | null;
+  created_at: string;
 };
 
 const toDate = (value: string | null | undefined) => new Date(value ?? new Date(0).toISOString());
@@ -55,7 +57,7 @@ export async function GET() {
   if (!member) return NextResponse.json({ error: 'No organization' }, { status: 400 });
 
   const organizationId = member.organization_id;
-  const { data: cutData, error: cutError } = await supabase.from('sales_cuts').select('id,cut_type,status,started_at,ended_at,total_orders,gross_total,table_total,products_total,discount_total,cash_total,card_total,transfer_total,other_total,users:created_by(email)').eq('organization_id', organizationId).eq('status', 'closed').order('ended_at', { ascending: false });
+  const { data: cutData, error: cutError } = await supabase.from('sales_cuts').select('id,organization_id,cut_type,status,started_at,ended_at,total_orders,gross_total,table_total,products_total,discount_total,cash_total,card_total,transfer_total,other_total,created_by,created_at').eq('organization_id', organizationId).eq('status', 'closed').order('ended_at', { ascending: false });
   if (cutError) return NextResponse.json({ error: cutError.message, details: cutError.details, hint: cutError.hint, code: cutError.code }, { status: 400 });
 
   const { data: cutOrders, error: cutOrdersError } = await supabase.from('sales_cut_orders').select('sales_cut_id,order_id,cut_type,orders(id,total,pool_tables(name))').eq('organization_id', organizationId).eq('cut_type', 'shift');
@@ -76,6 +78,7 @@ export async function GET() {
 
   const cuts = ((cutData ?? []) as CutRow[]).map((c) => ({
     id: c.id,
+    organizationId: c.organization_id,
     cutType: c.cut_type,
     status: c.status,
     startedAt: c.started_at,
@@ -89,7 +92,9 @@ export async function GET() {
     cardTotal: Number(c.card_total ?? 0),
     transferTotal: Number(c.transfer_total ?? 0),
     otherTotal: Number(c.other_total ?? 0),
-    cashierEmail: (Array.isArray(c.users) ? c.users[0]?.email : c.users?.email) ?? '—',
+    createdBy: c.created_by,
+    createdAt: c.created_at,
+    cashierEmail: c.created_by ?? user.email ?? '—',
     orders: grouped.get(c.id) ?? [],
   }));
 
