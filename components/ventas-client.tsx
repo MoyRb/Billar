@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { SalesCutTicketModal } from '@/components/sales-cut-thermal-ticket';
 
 type OrderStatus = 'open' | 'pending_payment' | 'paid' | 'cancelled';
@@ -15,6 +16,7 @@ type OrderView = {
   paymentMethod: string | null;
   createdAt: string;
   closedAt: string | null;
+  paidAt: string | null;
   tableName: string;
 };
 
@@ -39,9 +41,10 @@ type SalesCutView = {
 
 const money = (v: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(v);
 const startsToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
-const getOrderPaidDate = (order: OrderView) => new Date(order.closedAt ?? order.createdAt);
+const getOrderPaidDate = (order: OrderView) => new Date(order.paidAt ?? order.closedAt ?? order.createdAt);
 
-export default function VentasClient({ initialOrders, initialCuts, businessName, userEmail }: { initialOrders: OrderView[]; initialCuts: SalesCutView[]; businessName?: string | null; userEmail: string; }) {
+export default function VentasClient({ initialOrders, initialCuts, businessName, userEmail, organizationId }: { initialOrders: OrderView[]; initialCuts: SalesCutView[]; businessName?: string | null; userEmail: string; organizationId: string; }) {
+  const router = useRouter();
   const [orders] = useState(initialOrders);
   const [cuts, setCuts] = useState(initialCuts);
   const [previewCut, setPreviewCut] = useState<SalesCutView | null>(null);
@@ -49,30 +52,53 @@ export default function VentasClient({ initialOrders, initialCuts, businessName,
 
   const cutsSorted = useMemo(() => [...cuts].sort((a, b) => new Date(b.endedAt).getTime() - new Date(a.endedAt).getTime()), [cuts]);
 
-  const computeCutPreview = (cutType: 'shift' | 'day') => {
+  const pendingShiftOrders = useMemo(() => {
     const now = new Date();
     const startToday = startsToday();
     const todayShiftCuts = cuts
       .filter((cut) => cut.cutType === 'shift' && new Date(cut.endedAt) >= startToday && new Date(cut.endedAt) <= now)
       .sort((a, b) => new Date(a.endedAt).getTime() - new Date(b.endedAt).getTime());
-
     const lastShiftCut = todayShiftCuts.at(-1);
-    const rangeStart = cutType === 'shift' && lastShiftCut ? new Date(lastShiftCut.endedAt) : startToday;
+    const rangeStart = lastShiftCut ? new Date(lastShiftCut.endedAt) : startToday;
 
-    const selected = orders.filter((order) => {
-      if (order.status !== 'paid') return false;
+    const shiftOrderIds = new Set(
+      cuts
+        .filter((cut) => cut.cutType === 'shift')
+        .flatMap((cut) => cut.orders.map((order) => order.id)),
+    );
+
+    const paidOrders = orders.filter((order) => order.status === 'paid');
+    const pending = paidOrders.filter((order) => {
       const paidDate = getOrderPaidDate(order);
       if (paidDate < rangeStart || paidDate > now) return false;
-      if (cutType === 'shift') {
-        const alreadyIncludedInShift = cuts.some((cut) => cut.cutType === 'shift' && cut.orders.some((cutOrder) => cutOrder.id === order.id));
-        if (alreadyIncludedInShift) return false;
-      }
-      return true;
+      return !shiftOrderIds.has(order.id);
+    });
+
+    console.log('[ventas/debug] pending shift orders', {
+      organizationId,
+      rangeStart: rangeStart.toISOString(),
+      rangeEnd: now.toISOString(),
+      paidOrdersFound: paidOrders.length,
+      excludedBySalesCutOrders: paidOrders.length - pending.length,
+    });
+
+    return { pending, rangeStart, rangeEnd: now };
+  }, [cuts, orders, organizationId]);
+
+
+  const computeCutPreview = (cutType: 'shift' | 'day') => {
+    const now = new Date();
+    const startToday = startsToday();
+    const rangeStart = cutType === 'shift' ? pendingShiftOrders.rangeStart : startToday;
+
+    const selected = (cutType === 'shift' ? pendingShiftOrders.pending : orders.filter((order) => order.status === 'paid')).filter((order) => {
+      const paidDate = getOrderPaidDate(order);
+      return paidDate >= rangeStart && paidDate <= now;
     });
 
     if (selected.length === 0) {
       setPreviewCut(null);
-      alert('No hay ventas pagadas para este corte.');
+      alert('No hay ventas pagadas pendientes de corte.');
       return;
     }
 
@@ -109,6 +135,7 @@ export default function VentasClient({ initialOrders, initialCuts, businessName,
     setCuts((prev) => [saved, ...prev]);
     setTicketCut(saved);
     setPreviewCut(null);
+    router.refresh();
   };
 
   return (
@@ -118,6 +145,30 @@ export default function VentasClient({ initialOrders, initialCuts, businessName,
           <button className='rounded border border-rack-gold/40 px-3 py-2' onClick={() => computeCutPreview('shift')}>Hacer corte turno</button>
           <button className='rounded border border-rack-gold/40 px-3 py-2' onClick={() => computeCutPreview('day')}>Hacer corte día</button>
         </div>
+
+        <h3 className='mb-2 text-sm font-semibold uppercase tracking-wide text-rack-cream/80'>Ventas pagadas pendientes de corte</h3>
+        {pendingShiftOrders.pending.length === 0 ? (
+          <p className='mb-4 text-sm text-rack-cream/70'>No hay ventas pagadas pendientes de corte.</p>
+        ) : (
+          <div className='mb-4 overflow-x-auto'>
+            <table className='w-full min-w-[820px] text-sm'>
+              <thead><tr className='text-left text-rack-cream/70'><th className='pb-2'>Folio</th><th className='pb-2'>Mesa</th><th className='pb-2'>Hora pago</th><th className='pb-2'>Total mesa</th><th className='pb-2'>Total productos</th><th className='pb-2'>Total</th><th className='pb-2'>Método</th></tr></thead>
+              <tbody>
+                {pendingShiftOrders.pending.map((order) => (
+                  <tr key={order.id} className='border-t border-rack-gold/10'>
+                    <td className='py-2'>#{order.id.slice(0, 6).toUpperCase()}</td>
+                    <td className='py-2'>{order.tableName}</td>
+                    <td className='py-2'>{getOrderPaidDate(order).toLocaleString('es-MX')}</td>
+                    <td className='py-2'>{money(order.tableTotal)}</td>
+                    <td className='py-2'>{money(order.productsTotal)}</td>
+                    <td className='py-2'>{money(order.total)}</td>
+                    <td className='py-2'>{order.paymentMethod ?? 'other'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         <h3 className='mb-2 text-sm font-semibold uppercase tracking-wide text-rack-cream/80'>Historial de cortes</h3>
         <div className='overflow-x-auto'>

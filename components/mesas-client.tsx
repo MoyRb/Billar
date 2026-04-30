@@ -110,7 +110,7 @@ export function MesasClient({ initialTables, organizationId, userId }: { initial
       if (action === 'pay') {
         const session = table.currentSession; if (!session || session.status !== 'pending_payment') throw new Error('La mesa no está lista para cobro.');
         const { data: existingOrder } = await supabase.from('orders').select('id').eq('organization_id', organizationId).eq('table_session_id', session.id).eq('status', 'pending_payment').limit(1).maybeSingle();
-        if (existingOrder) await supabase.from('orders').update({ status: 'paid', payment_method: 'cash', paid_at: new Date().toISOString() }).eq('id', existingOrder.id).eq('organization_id', organizationId);
+        if (existingOrder) await supabase.from('orders').update({ status: 'paid', payment_method: 'cash', paid_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', existingOrder.id).eq('organization_id', organizationId);
         await supabase.from('table_sessions').update({ status: 'paid' }).eq('id', session.id).eq('organization_id', organizationId);
         await supabase.from('pool_tables').update({ status: 'available' }).eq('id', table.id).eq('organization_id', organizationId);
         clearSelectionState();
