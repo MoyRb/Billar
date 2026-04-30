@@ -60,7 +60,7 @@ export default async function Page() {
 
   const { data: org } = await s.from('organizations').select('name').eq('id', m.organization_id).maybeSingle();
   const { data: orderData } = await s.from('orders').select('id,status,order_type,table_total,products_total,discount_total,total,payment_method,created_at,closed_at,paid_at,pool_tables(name)').eq('organization_id', m.organization_id).eq('order_type', 'table').order('created_at', { ascending: false });
-  const { data: cutData } = await s.from('sales_cuts').select('id,cut_type,status,started_at,ended_at,total_orders,gross_total,table_total,products_total,discount_total,cash_total,card_total,transfer_total,other_total,users:created_by(email)').eq('organization_id', m.organization_id).order('created_at', { ascending: false });
+  const { data: cutData } = await s.from('sales_cuts').select('id,cut_type,status,started_at,ended_at,total_orders,gross_total,table_total,products_total,discount_total,cash_total,card_total,transfer_total,other_total,users:created_by(email)').eq('organization_id', m.organization_id).eq('status', 'closed').order('ended_at', { ascending: false });
   const { data: cutOrders } = await s.from('sales_cut_orders').select('sales_cut_id,order_id,orders(id,total,pool_tables(name))').eq('organization_id', m.organization_id);
 
   const orders = ((orderData ?? []) as OrderRow[]).map((o) => ({

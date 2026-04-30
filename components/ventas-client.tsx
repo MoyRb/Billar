@@ -56,14 +56,14 @@ export default function VentasClient({ initialOrders, initialCuts, businessName,
     const now = new Date();
     const startToday = startsToday();
     const todayShiftCuts = cuts
-      .filter((cut) => cut.cutType === 'shift' && new Date(cut.endedAt) >= startToday && new Date(cut.endedAt) <= now)
+      .filter((cut) => cut.cutType === 'shift' && cut.status === 'closed' && new Date(cut.endedAt) >= startToday && new Date(cut.endedAt) <= now)
       .sort((a, b) => new Date(a.endedAt).getTime() - new Date(b.endedAt).getTime());
     const lastShiftCut = todayShiftCuts.at(-1);
     const rangeStart = lastShiftCut ? new Date(lastShiftCut.endedAt) : startToday;
 
     const shiftOrderIds = new Set(
       cuts
-        .filter((cut) => cut.cutType === 'shift')
+        .filter((cut) => cut.cutType === 'shift' && cut.status === 'closed')
         .flatMap((cut) => cut.orders.map((order) => order.id)),
     );
 
@@ -74,12 +74,14 @@ export default function VentasClient({ initialOrders, initialCuts, businessName,
       return !shiftOrderIds.has(order.id);
     });
 
-    console.log('[ventas/debug] pending shift orders', {
+    console.debug('[ventas/debug] pending shift orders', {
       organizationId,
+      lastShiftCut: lastShiftCut?.id ?? null,
       rangeStart: rangeStart.toISOString(),
       rangeEnd: now.toISOString(),
       paidOrdersFound: paidOrders.length,
-      excludedBySalesCutOrders: paidOrders.length - pending.length,
+      pendingOrdersFound: pending.length,
+      excludedBySalesCutOrders: paidOrders.length - pending.length
     });
 
     return { pending, rangeStart, rangeEnd: now };
@@ -130,7 +132,11 @@ export default function VentasClient({ initialOrders, initialCuts, businessName,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(previewCut),
     });
-    if (!response.ok) return;
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => ({}));
+      alert(errorBody?.error ?? 'No se pudo guardar el corte.');
+      return;
+    }
     const saved = (await response.json()) as SalesCutView;
     setCuts((prev) => [saved, ...prev]);
     setTicketCut(saved);
