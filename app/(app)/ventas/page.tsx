@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { redirect } from 'next/navigation';
 import { PageHeader } from '@/components/ui';
 import VentasClient from '@/components/ventas-client';

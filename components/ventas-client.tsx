@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { SalesCutTicketModal } from '@/components/sales-cut-thermal-ticket';
 
@@ -45,12 +45,23 @@ const getOrderPaidDate = (order: OrderView) => new Date(order.paidAt ?? order.cl
 
 export default function VentasClient({ initialOrders, initialCuts, businessName, userEmail, organizationId }: { initialOrders: OrderView[]; initialCuts: SalesCutView[]; businessName?: string | null; userEmail: string; organizationId: string; }) {
   const router = useRouter();
-  const [orders] = useState(initialOrders);
+  const [orders, setOrders] = useState(initialOrders);
   const [cuts, setCuts] = useState(initialCuts);
   const [previewCut, setPreviewCut] = useState<SalesCutView | null>(null);
   const [ticketCut, setTicketCut] = useState<SalesCutView | null>(null);
 
   const cutsSorted = useMemo(() => [...cuts].sort((a, b) => new Date(b.endedAt).getTime() - new Date(a.endedAt).getTime()), [cuts]);
+
+  const loadFromSupabase = useCallback(async () => {
+    const response = await fetch('/api/sales-cuts', { method: 'GET', cache: 'no-store' });
+    if (!response.ok) return;
+    const data = (await response.json()) as { cuts: SalesCutView[]; pendingShiftOrders: OrderView[] };
+    setCuts(data.cuts);
+    setOrders(data.pendingShiftOrders);
+    console.debug('[ventas/debug] cuts loaded from Supabase', { organizationId, cuts: data.cuts.length, pendingShiftOrders: data.pendingShiftOrders.length });
+  }, [organizationId]);
+
+  useEffect(() => { void loadFromSupabase(); }, [loadFromSupabase]);
 
   const pendingShiftOrders = useMemo(() => {
     const now = new Date();
@@ -67,7 +78,7 @@ export default function VentasClient({ initialOrders, initialCuts, businessName,
         .flatMap((cut) => cut.orders.map((order) => order.id)),
     );
 
-    const paidOrders = orders.filter((order) => order.status === 'paid');
+    const paidOrders = orders;
     const pending = paidOrders.filter((order) => {
       const paidDate = getOrderPaidDate(order);
       if (paidDate < rangeStart || paidDate > now) return false;
@@ -138,7 +149,7 @@ export default function VentasClient({ initialOrders, initialCuts, businessName,
       return;
     }
     const saved = (await response.json()) as SalesCutView;
-    setCuts((prev) => [saved, ...prev]);
+    await loadFromSupabase();
     setTicketCut(saved);
     setPreviewCut(null);
     router.refresh();
