@@ -1,11 +1,9 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { MetricCard } from '@/components/ui';
 import { SalesCutTicketModal } from '@/components/sales-cut-thermal-ticket';
 
 type OrderStatus = 'open' | 'pending_payment' | 'paid' | 'cancelled';
-type DateFilter = 'today' | 'shift' | 'yesterday' | 'last7';
 
 type OrderView = {
   id: string;
@@ -16,6 +14,7 @@ type OrderView = {
   total: number;
   paymentMethod: string | null;
   createdAt: string;
+  closedAt: string | null;
   tableName: string;
 };
 
@@ -39,111 +38,148 @@ type SalesCutView = {
 };
 
 const money = (v: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(v);
-const startsToday = () => { const d = new Date(); d.setHours(0,0,0,0); return d; };
+const startsToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
+const getOrderPaidDate = (order: OrderView) => new Date(order.closedAt ?? order.createdAt);
 
 export default function VentasClient({ initialOrders, initialCuts, businessName, userEmail }: { initialOrders: OrderView[]; initialCuts: SalesCutView[]; businessName?: string | null; userEmail: string; }) {
   const [orders] = useState(initialOrders);
   const [cuts, setCuts] = useState(initialCuts);
-  const [statusFilter, setStatusFilter] = useState<'all' | OrderStatus>('all');
-  const [dateFilter, setDateFilter] = useState<DateFilter>('today');
-  const [tab, setTab] = useState<'ventas' | 'pendientes' | 'cortes'>('ventas');
   const [previewCut, setPreviewCut] = useState<SalesCutView | null>(null);
   const [ticketCut, setTicketCut] = useState<SalesCutView | null>(null);
 
-  const filteredOrders = useMemo(() => {
+  const cutsSorted = useMemo(() => [...cuts].sort((a, b) => new Date(b.endedAt).getTime() - new Date(a.endedAt).getTime()), [cuts]);
+
+  const computeCutPreview = (cutType: 'shift' | 'day') => {
     const now = new Date();
     const startToday = startsToday();
-    const startYesterday = new Date(startToday); startYesterday.setDate(startYesterday.getDate() - 1);
-    const startLast7 = new Date(startToday); startLast7.setDate(startLast7.getDate() - 6);
-    const lastShift = cuts.filter((c) => c.cutType === 'shift').sort((a,b)=>a.endedAt.localeCompare(b.endedAt)).at(-1);
-    const startShift = lastShift ? new Date(lastShift.endedAt) : startToday;
+    const todayShiftCuts = cuts
+      .filter((cut) => cut.cutType === 'shift' && new Date(cut.endedAt) >= startToday && new Date(cut.endedAt) <= now)
+      .sort((a, b) => new Date(a.endedAt).getTime() - new Date(b.endedAt).getTime());
 
-    return orders.filter((o) => {
-      if (tab === 'pendientes' && o.status !== 'pending_payment') return false;
-      if (statusFilter !== 'all' && o.status !== statusFilter) return false;
-      const created = new Date(o.createdAt);
-      if (dateFilter === 'today') return created >= startToday && created <= now;
-      if (dateFilter === 'yesterday') return created >= startYesterday && created < startToday;
-      if (dateFilter === 'last7') return created >= startLast7 && created <= now;
-      return created >= startShift && created <= now;
+    const lastShiftCut = todayShiftCuts.at(-1);
+    const rangeStart = cutType === 'shift' && lastShiftCut ? new Date(lastShiftCut.endedAt) : startToday;
+
+    const selected = orders.filter((order) => {
+      if (order.status !== 'paid') return false;
+      const paidDate = getOrderPaidDate(order);
+      if (paidDate < rangeStart || paidDate > now) return false;
+      if (cutType === 'shift') {
+        const alreadyIncludedInShift = cuts.some((cut) => cut.cutType === 'shift' && cut.orders.some((cutOrder) => cutOrder.id === order.id));
+        if (alreadyIncludedInShift) return false;
+      }
+      return true;
     });
-  }, [orders, statusFilter, dateFilter, tab, cuts]);
 
-  const summary = useMemo(() => {
-    const todayPaid = orders.filter((o) => o.status === 'paid' && new Date(o.createdAt) >= startsToday());
-    const pendings = orders.filter((o) => o.status === 'pending_payment').length;
-    return {
-      paidToday: todayPaid.length,
-      soldToday: todayPaid.reduce((acc, o) => acc + o.total, 0),
-      tableToday: todayPaid.reduce((acc, o) => acc + o.tableTotal, 0),
-      productsToday: todayPaid.reduce((acc, o) => acc + o.productsTotal, 0),
-      pendings,
-      totalOrders: orders.length,
-    };
-  }, [orders]);
+    if (selected.length === 0) {
+      setPreviewCut(null);
+      alert('No hay ventas pagadas para este corte.');
+      return;
+    }
 
-  const prepareCut = (cutType: 'shift' | 'day') => {
-    const now = new Date();
-    const startToday = startsToday();
-    const lastShift = cuts.filter((c) => c.cutType === 'shift').sort((a,b)=>a.endedAt.localeCompare(b.endedAt)).at(-1);
-    const startShift = lastShift ? new Date(lastShift.endedAt) : startToday;
-    const selected = orders.filter((o) => o.status === 'paid' && (cutType === 'day' ? new Date(o.createdAt) >= startToday : new Date(o.createdAt) >= startShift));
-    if (selected.length === 0) return;
-    const totalBy = (m: string) => selected.filter((o) => (o.paymentMethod ?? 'other') === m).reduce((a,o)=>a+o.total,0);
-    const computed: SalesCutView = {
+    const totalBy = (method: string) => selected.filter((o) => (o.paymentMethod ?? 'other') === method).reduce((acc, o) => acc + o.total, 0);
+    setPreviewCut({
       id: crypto.randomUUID(),
       cutType,
       status: 'closed',
-      startedAt: (cutType === 'day' ? startToday : startShift).toISOString(),
+      startedAt: rangeStart.toISOString(),
       endedAt: now.toISOString(),
       totalOrders: selected.length,
-      grossTotal: selected.reduce((a,o)=>a+o.total,0),
-      tableTotal: selected.reduce((a,o)=>a+o.tableTotal,0),
-      productsTotal: selected.reduce((a,o)=>a+o.productsTotal,0),
-      discountTotal: selected.reduce((a,o)=>a+o.discountTotal,0),
+      grossTotal: selected.reduce((acc, o) => acc + o.total, 0),
+      tableTotal: selected.reduce((acc, o) => acc + o.tableTotal, 0),
+      productsTotal: selected.reduce((acc, o) => acc + o.productsTotal, 0),
+      discountTotal: selected.reduce((acc, o) => acc + o.discountTotal, 0),
       cashTotal: totalBy('cash'),
       cardTotal: totalBy('card'),
       transferTotal: totalBy('transfer'),
-      otherTotal: selected.reduce((a,o)=>a+o.total,0) - totalBy('cash') - totalBy('card') - totalBy('transfer'),
+      otherTotal: selected.reduce((acc, o) => acc + o.total, 0) - totalBy('cash') - totalBy('card') - totalBy('transfer'),
       cashierEmail: userEmail,
       orders: selected.map((o) => ({ id: o.id, tableName: o.tableName, total: o.total })),
-    };
-    setPreviewCut(computed);
+    });
   };
 
   const confirmCut = async () => {
     if (!previewCut) return;
-    const res = await fetch('/api/sales-cuts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(previewCut) });
-    if (!res.ok) return;
-    const saved = (await res.json()) as SalesCutView;
+    const response = await fetch('/api/sales-cuts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(previewCut),
+    });
+    if (!response.ok) return;
+    const saved = (await response.json()) as SalesCutView;
     setCuts((prev) => [saved, ...prev]);
     setTicketCut(saved);
     setPreviewCut(null);
   };
 
-  return <div className='space-y-4'>
-    <div className='grid gap-3 md:grid-cols-3 lg:grid-cols-6'>
-      <MetricCard title='Ventas pagadas hoy' value={summary.paidToday} />
-      <MetricCard title='Total vendido hoy' value={money(summary.soldToday)} />
-      <MetricCard title='Mesas hoy' value={money(summary.tableToday)} />
-      <MetricCard title='Productos hoy' value={money(summary.productsToday)} />
-      <MetricCard title='Pendientes pago' value={summary.pendings} />
-      <MetricCard title='Núm. ventas' value={summary.totalOrders} />
-    </div>
-    <div className='rounded-2xl border border-rack-gold/10 bg-rack-panel p-4'>
-      <div className='mb-3 flex flex-wrap gap-2'>
-        {['ventas','pendientes','cortes'].map((v) => <button key={v} onClick={() => setTab(v as 'ventas' | 'pendientes' | 'cortes')} className='rounded border border-rack-gold/40 px-3 py-1'>{v}</button>)}
-        <button className='ml-auto rounded border border-rack-gold/40 px-3 py-1' onClick={() => prepareCut('shift')}>Hacer corte turno</button>
-        <button className='rounded border border-rack-gold/40 px-3 py-1' onClick={() => prepareCut('day')}>Hacer corte día</button>
-      </div>
-      {tab !== 'cortes' && <div className='mb-4 flex flex-wrap gap-2'>
-        <select className='rounded bg-rack-shell px-2 py-1' value={dateFilter} onChange={(e) => setDateFilter(e.target.value as DateFilter)}><option value='today'>Hoy</option><option value='shift'>Este turno</option><option value='yesterday'>Ayer</option><option value='last7'>Últimos 7 días</option></select>
-        <select className='rounded bg-rack-shell px-2 py-1' value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as 'all' | OrderStatus)}><option value='all'>Todas</option><option value='open'>Abiertas</option><option value='pending_payment'>Pendientes</option><option value='paid'>Pagadas</option><option value='cancelled'>Canceladas</option></select>
-      </div>}
-      {tab === 'cortes' ? <table className='w-full text-sm'><thead><tr className='text-left text-rack-cream/70'><th>Folio</th><th>Tipo</th><th>Fecha</th><th>Usuario</th><th>Ventas</th><th>Total</th><th>Acciones</th></tr></thead><tbody>{cuts.map((c)=><tr key={c.id} className='border-t border-rack-gold/10'><td>CUT-{c.id.slice(0,4).toUpperCase()}</td><td>{c.cutType}</td><td>{new Date(c.endedAt).toLocaleString('es-MX')}</td><td>{c.cashierEmail}</td><td>{c.totalOrders}</td><td>{money(c.grossTotal)}</td><td><button onClick={()=>setTicketCut(c)}>Ver ticket</button></td></tr>)}</tbody></table> : <table className='w-full text-sm'><thead><tr className='text-left text-rack-cream/70'><th>Folio</th><th>Fecha/hora</th><th>Mesa</th><th>Estado</th><th>Mesa</th><th>Productos</th><th>Total</th><th>Método</th><th>Acciones</th></tr></thead><tbody>{filteredOrders.map((o)=><tr key={o.id} className='border-t border-rack-gold/10'><td>#{o.id.slice(0,6)}</td><td>{new Date(o.createdAt).toLocaleString('es-MX')}</td><td>{o.tableName}</td><td>{o.status}</td><td>{money(o.tableTotal)}</td><td>{money(o.productsTotal)}</td><td>{money(o.total)}</td><td>{o.paymentMethod ?? 'other'}</td><td>Ver detalle</td></tr>)}</tbody></table>}
-    </div>
+  return (
+    <div className='space-y-4'>
+      <section className='rounded-2xl border border-rack-gold/10 bg-rack-panel p-4'>
+        <div className='mb-4 flex flex-wrap gap-2'>
+          <button className='rounded border border-rack-gold/40 px-3 py-2' onClick={() => computeCutPreview('shift')}>Hacer corte turno</button>
+          <button className='rounded border border-rack-gold/40 px-3 py-2' onClick={() => computeCutPreview('day')}>Hacer corte día</button>
+        </div>
 
-    {previewCut && <div className='fixed inset-0 z-50 bg-black/70 p-4'><div className='mx-auto max-w-2xl rounded-2xl border border-rack-gold/20 bg-rack-panel p-4'><h3 className='text-lg font-semibold'>Vista previa de corte</h3><p>{previewCut.cutType}</p><p>Ventas: {previewCut.totalOrders}</p><p>Total: {money(previewCut.grossTotal)}</p><div className='mt-3 flex justify-end gap-2'><button className='rounded border px-3 py-1' onClick={()=>setPreviewCut(null)}>Cancelar</button><button className='rounded border px-3 py-1' onClick={confirmCut}>Confirmar corte</button></div></div></div>}
-    <SalesCutTicketModal open={Boolean(ticketCut)} onClose={() => setTicketCut(null)} businessName={businessName} data={ticketCut} />
-  </div>;
+        <h3 className='mb-2 text-sm font-semibold uppercase tracking-wide text-rack-cream/80'>Historial de cortes</h3>
+        <div className='overflow-x-auto'>
+          <table className='w-full min-w-[820px] text-sm'>
+            <thead>
+              <tr className='text-left text-rack-cream/70'>
+                <th className='pb-2'>Folio</th>
+                <th className='pb-2'>Tipo</th>
+                <th className='pb-2'>Inicio</th>
+                <th className='pb-2'>Fin</th>
+                <th className='pb-2'>Usuario</th>
+                <th className='pb-2'>Ventas</th>
+                <th className='pb-2'>Total</th>
+                <th className='pb-2'>Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cutsSorted.map((cut) => (
+                <tr key={cut.id} className='border-t border-rack-gold/10'>
+                  <td className='py-2'>CUT-{cut.id.slice(0, 4).toUpperCase()}</td>
+                  <td className='py-2'>{cut.cutType === 'shift' ? 'Turno' : 'Día'}</td>
+                  <td className='py-2'>{new Date(cut.startedAt).toLocaleString('es-MX')}</td>
+                  <td className='py-2'>{new Date(cut.endedAt).toLocaleString('es-MX')}</td>
+                  <td className='py-2'>{cut.cashierEmail}</td>
+                  <td className='py-2'>{cut.totalOrders}</td>
+                  <td className='py-2'>{money(cut.grossTotal)}</td>
+                  <td className='py-2'>
+                    <div className='flex gap-3'>
+                      <button className='underline' onClick={() => setTicketCut(cut)}>Ver ticket</button>
+                      <button className='underline' onClick={() => { setTicketCut(cut); setTimeout(() => window.print(), 100); }}>Imprimir ticket</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {previewCut && (
+        <div className='fixed inset-0 z-50 bg-black/70 p-4'>
+          <div className='mx-auto max-w-2xl rounded-2xl border border-rack-gold/20 bg-rack-panel p-4'>
+            <h3 className='text-lg font-semibold'>Vista previa de corte</h3>
+            <p>Tipo: {previewCut.cutType === 'shift' ? 'Corte de turno' : 'Corte del día'}</p>
+            <p>Rango: {new Date(previewCut.startedAt).toLocaleString('es-MX')} - {new Date(previewCut.endedAt).toLocaleString('es-MX')}</p>
+            <p>Ventas: {previewCut.totalOrders}</p>
+            <p>Total mesas: {money(previewCut.tableTotal)}</p>
+            <p>Total productos: {money(previewCut.productsTotal)}</p>
+            <p>Total vendido: {money(previewCut.grossTotal)}</p>
+            <p>Pagos: Efectivo {money(previewCut.cashTotal)} · Tarjeta {money(previewCut.cardTotal)} · Transferencia {money(previewCut.transferTotal)} · Otros {money(previewCut.otherTotal)}</p>
+            <div className='mt-3 max-h-48 overflow-y-auto rounded border border-rack-gold/20 p-2 text-xs'>
+              {previewCut.orders.map((order) => <p key={order.id}>#{order.id.slice(0, 6)} {order.tableName} {money(order.total)}</p>)}
+            </div>
+            <div className='mt-3 flex justify-end gap-2'>
+              <button className='rounded border px-3 py-1' onClick={() => setPreviewCut(null)}>Cancelar</button>
+              <button className='rounded border px-3 py-1' onClick={confirmCut}>Confirmar corte</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <SalesCutTicketModal open={Boolean(ticketCut)} onClose={() => setTicketCut(null)} businessName={businessName} data={ticketCut} />
+    </div>
+  );
 }
