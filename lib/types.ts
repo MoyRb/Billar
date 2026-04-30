@@ -34,4 +34,24 @@ export interface TableSession {
 
 export interface TableWithCurrentSession extends PoolTable {
   currentSession: TableSession | null;
+  currentOrder: TableOrder | null;
+}
+
+export interface OrderItem {
+  id: string;
+  product_name: string;
+  quantity: number;
+  unit_price: number;
+  line_total: number;
+  status: 'active' | 'cancelled';
+}
+
+export interface TableOrder {
+  id: string;
+  status: string;
+  table_total: number;
+  products_total: number;
+  discount_total: number;
+  total: number;
+  order_items: OrderItem[];
 }
