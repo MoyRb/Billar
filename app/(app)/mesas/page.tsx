@@ -24,7 +24,6 @@ export default async function Mesas() {
     .from('pool_tables')
     .select('*')
     .eq('organization_id', organizationId)
-    .eq('is_active', true)
     .order('name');
 
   const tableIds = (tables ?? []).map((t) => t.id);

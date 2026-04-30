@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
-import type { PoolTable, PoolTableStatus } from '@/lib/types';
+import type { PoolTable, TableStatus } from '@/lib/types';
 
 const navItems = [
   { key: 'dashboard', label: 'Dashboard' },
@@ -54,25 +54,27 @@ export function MetricCard({ title, value, icon }: { title: string; value: strin
 
 export const StatCard = MetricCard;
 
-const statusMap: Record<PoolTableStatus, string> = {
+const statusMap: Record<TableStatus, string> = {
   available: 'border-emerald-400/30 bg-emerald-500/15 text-emerald-200',
   occupied: 'border-cyan-400/30 bg-cyan-500/15 text-cyan-200',
   paused: 'border-amber-400/30 bg-amber-500/15 text-amber-200',
   pending_payment: 'border-orange-400/30 bg-orange-500/15 text-orange-200',
   maintenance: 'border-slate-400/30 bg-slate-500/20 text-slate-200',
   reserved: 'border-violet-400/30 bg-violet-500/15 text-violet-200',
+  out_of_service: 'border-rose-400/30 bg-rose-500/15 text-rose-200',
 };
 
-const statusLabel: Record<PoolTableStatus, string> = {
+const statusLabel: Record<TableStatus, string> = {
   available: 'Disponible',
   occupied: 'Ocupada',
   paused: 'Pausada',
   pending_payment: 'Pendiente de pago',
   maintenance: 'Mantenimiento',
   reserved: 'Reservada',
+  out_of_service: 'Fuera de servicio',
 };
 
-export function StatusBadge({ status }: { status: PoolTableStatus }) {
+export function StatusBadge({ status }: { status: TableStatus }) {
   return <span className={cn('rounded-full border px-2.5 py-1 text-xs font-medium', statusMap[status])}>{statusLabel[status]}</span>;
 }
 
