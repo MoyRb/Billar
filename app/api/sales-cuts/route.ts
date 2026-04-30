@@ -33,7 +33,11 @@ export async function POST(request: Request) {
 
   const links = (payload.orders as { id: string }[]).map((order) => ({ organization_id: member.organization_id, sales_cut_id: created.id, order_id: order.id }));
   if (links.length > 0) {
-    await supabase.from('sales_cut_orders').insert(links);
+    const { error: linksError } = await supabase.from('sales_cut_orders').insert(links);
+    if (linksError) {
+      await supabase.from('sales_cuts').delete().eq('id', created.id).eq('organization_id', member.organization_id);
+      return NextResponse.json({ error: linksError.message }, { status: 400 });
+    }
   }
 
   return NextResponse.json({

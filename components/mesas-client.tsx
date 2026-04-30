@@ -109,10 +109,44 @@ export function MesasClient({ initialTables, organizationId, userId }: { initial
       }
       if (action === 'pay') {
         const session = table.currentSession; if (!session || session.status !== 'pending_payment') throw new Error('La mesa no está lista para cobro.');
-        const { data: existingOrder } = await supabase.from('orders').select('id').eq('organization_id', organizationId).eq('table_session_id', session.id).eq('status', 'pending_payment').limit(1).maybeSingle();
-        if (existingOrder) await supabase.from('orders').update({ status: 'paid', payment_method: 'cash', paid_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', existingOrder.id).eq('organization_id', organizationId);
-        await supabase.from('table_sessions').update({ status: 'paid' }).eq('id', session.id).eq('organization_id', organizationId);
-        await supabase.from('pool_tables').update({ status: 'available' }).eq('id', table.id).eq('organization_id', organizationId);
+        const paidAt = new Date().toISOString();
+        const { data: existingOrder, error: orderLookupError } = await supabase
+          .from('orders')
+          .select('id,closed_at,table_total,products_total,total,pool_table_id')
+          .eq('organization_id', organizationId)
+          .eq('table_session_id', session.id)
+          .eq('status', 'pending_payment')
+          .eq('pool_table_id', table.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (orderLookupError) throw orderLookupError;
+        if (!existingOrder) throw new Error('No se encontró una orden pendiente de pago para esta mesa.');
+
+        const { error: orderUpdateError } = await supabase
+          .from('orders')
+          .update({
+            status: 'paid',
+            payment_method: 'cash',
+            paid_at: paidAt,
+            closed_at: existingOrder.closed_at ?? paidAt,
+            table_total: Number(existingOrder.table_total ?? session.table_total ?? 0),
+            products_total: Number(existingOrder.products_total ?? 0),
+            total: Number(existingOrder.total ?? (Number(existingOrder.table_total ?? session.table_total ?? 0) + Number(existingOrder.products_total ?? 0))),
+            updated_at: paidAt,
+          })
+          .eq('id', existingOrder.id)
+          .eq('organization_id', organizationId)
+          .eq('status', 'pending_payment');
+        if (orderUpdateError) {
+          console.error('[mesas/pay] no se pudo actualizar order a paid', orderUpdateError);
+          throw new Error('No se pudo registrar el cobro. La mesa NO fue liberada.');
+        }
+
+        const { error: sessionError } = await supabase.from('table_sessions').update({ status: 'paid', updated_at: paidAt }).eq('id', session.id).eq('organization_id', organizationId);
+        if (sessionError) throw sessionError;
+        const { error: tableError } = await supabase.from('pool_tables').update({ status: 'available', updated_at: paidAt }).eq('id', table.id).eq('organization_id', organizationId);
+        if (tableError) throw tableError;
         clearSelectionState();
       }
       if (action === 'set_maintenance') await supabase.from('pool_tables').update({ status: 'maintenance' }).eq('id', table.id).eq('organization_id', organizationId);
