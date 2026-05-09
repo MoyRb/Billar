@@ -4,9 +4,6 @@ import { createServerClient } from '@supabase/ssr';
 const protectedRoutes = ['/dashboard', '/mesas', '/ventas', '/productos', '/inventario', '/caja', '/clientes', '/reservaciones', '/reportes', '/configuracion'];
 
 export async function middleware(request: NextRequest) {
-  if (request.nextUrl.pathname === '/') {
-    return NextResponse.redirect(new URL('/login', request.url));
-  }
 
   const response = NextResponse.next({ request });
   const supabase = createServerClient(
