@@ -1,5 +1,10 @@
-const CACHE_NAME = 'rackhouse-static-v1';
-const STATIC_ASSETS = ['/', '/manifest.webmanifest', '/favicon.svg', '/icons/icon.svg', '/icons/maskable-icon.svg'];
+const CACHE_NAME = 'rackhouse-static-v2';
+const STATIC_ASSETS = [
+  '/manifest.webmanifest',
+  '/favicon.svg',
+  '/icons/icon.svg',
+  '/icons/maskable-icon.svg',
+];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -11,11 +16,7 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(
-        keys
-          .filter((key) => key !== CACHE_NAME)
-          .map((key) => caches.delete(key))
-      )
+      Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
     )
   );
   self.clients.claim();
@@ -28,24 +29,23 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Do not intercept HTML navigation requests (e.g. "/").
+  if (request.mode === 'navigate' || request.destination === 'document') {
+    return;
+  }
+
   const url = new URL(request.url);
 
-  if (
-    url.pathname.startsWith('/api/') ||
-    url.pathname.startsWith('/auth') ||
-    url.hostname.includes('supabase.co') ||
-    url.searchParams.has('token')
-  ) {
+  if (url.origin !== self.location.origin) {
     return;
   }
 
   const isStaticAsset =
-    url.origin === self.location.origin &&
-    (url.pathname.startsWith('/_next/static/') ||
-      url.pathname.startsWith('/icons/') ||
-      url.pathname === '/' ||
-      url.pathname === '/favicon.svg' ||
-      url.pathname === '/manifest.webmanifest');
+    url.pathname === '/manifest.webmanifest' ||
+    url.pathname === '/favicon.svg' ||
+    url.pathname === '/icons/icon.svg' ||
+    url.pathname === '/icons/maskable-icon.svg' ||
+    url.pathname.startsWith('/_next/static/');
 
   if (!isStaticAsset) {
     return;
@@ -58,7 +58,7 @@ self.addEventListener('fetch', (event) => {
       }
 
       return fetch(request).then((response) => {
-        if (!response || response.status !== 200 || response.type !== 'basic') {
+        if (!response || response.status !== 200 || response.type !== 'basic' || response.redirected) {
           return response;
         }
 
