@@ -13,16 +13,16 @@ type ThermalTicketProps = {
 };
 
 const formatDateTime = (value?: string | null) => {
-  if (!value) return '—';
+  if (!value) return '-';
   return new Date(value).toLocaleString('es-MX', { hour12: false });
 };
 
 const formatTime = (value?: string | null) => {
-  if (!value) return '—';
+  if (!value) return '-';
   return new Date(value).toLocaleTimeString('es-MX', { hour12: false, hour: '2-digit', minute: '2-digit' });
 };
 
-const shortFolio = (orderId?: string) => (orderId ? `RH-${orderId.slice(0, 4).toUpperCase()}` : '—');
+const shortFolio = (orderId?: string) => (orderId ? `RH-${orderId.slice(0, 4).toUpperCase()}` : '-');
 
 export function ThermalTicket({ businessName, userEmail, table, session, order, orderItems }: ThermalTicketProps) {
   const activeItems = orderItems.filter((item) => item.status === 'active');
@@ -35,23 +35,23 @@ export function ThermalTicket({ businessName, userEmail, table, session, order, 
   const total = Number(order?.total ?? tableTotal + productsTotal - discountTotal);
 
   return (
-    <article className="thermal-ticket mx-auto w-[48mm] rounded border border-black/20 bg-white p-2 text-[10px] leading-tight text-black shadow-none">
+    <article className="thermal-ticket mx-auto w-[58mm] bg-white p-2 text-[10px] leading-tight text-black">
       <p className="text-center text-[11px] font-bold">RACKHOUSE</p>
       <p className="text-center">{businessName?.trim() || 'Billar'}</p>
       <p className="mt-1 text-center">Ticket de consumo</p>
       <p className="my-1">------------------------</p>
 
       <p>Folio: {shortFolio(order?.id)}</p>
-      <p>Mesa: {table.name || '—'}</p>
+      <p>Mesa: {table.name || '-'}</p>
       <p>Fecha: {formatDateTime(order ? session.ended_at ?? new Date().toISOString() : null)}</p>
-      <p>Cajero: {userEmail || '—'}</p>
-      <p>Método: {order?.status === 'paid' ? 'Efectivo' : '—'}</p>
-      <p>Estado: {order?.status ?? session.status ?? '—'}</p>
+      <p>Cajero: {userEmail || '-'}</p>
+      <p>Metodo: {order?.status === 'paid' ? 'Efectivo' : '-'}</p>
+      <p>Estado: {order?.status ?? session.status ?? '-'}</p>
 
       <p className="my-1">------------------------</p>
       <p className="font-bold">TIEMPO</p>
       <p>Inicio: {formatTime(session.started_at)}</p>
-      <p>Fin: {session.ended_at ? formatTime(session.ended_at) : 'En curso'}</p>
+      <p>Fin: {session.ended_at ? formatTime(session.ended_at) : 'En curso' }</p>
       <p>Tiempo: {formatDuration(chargeableSeconds)}</p>
       <p>Tarifa: {formatCurrency(session.hourly_rate)}/h</p>
       <p>Mesa: {formatCurrency(tableTotal)}</p>

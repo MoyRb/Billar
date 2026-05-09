@@ -12,7 +12,7 @@ body {
 
 @media print {
   @page {
-    size: 48mm auto;
+    size: 58mm auto;
     margin: 2mm;
   }
 
@@ -29,13 +29,14 @@ body {
     position: absolute;
     left: 0;
     top: 0;
-    width: 48mm;
+    width: 58mm;
     background: white !important;
     color: black !important;
     font-family: monospace;
     font-size: 10px;
     box-shadow: none !important;
-    border: 0 !important;
+    border: none !important;
+    border-radius: 0 !important;
   }
 
   .no-print {

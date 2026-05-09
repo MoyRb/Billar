@@ -30,17 +30,17 @@ const time = (value: string) => new Date(value).toLocaleTimeString('es-MX', { ho
 
 export function SalesCutThermalTicket({ businessName, data }: { businessName?: string | null; data: SalesCutTicketData }) {
   return (
-    <article className="thermal-ticket mx-auto w-[48mm] rounded border border-black/20 bg-white p-2 font-mono text-[10px] leading-tight text-black shadow-none">
+    <article className="thermal-ticket mx-auto w-[58mm] bg-white p-2 font-mono text-[10px] leading-tight text-black">
       <p className="text-center text-[11px] font-bold">RACKHOUSE</p>
       <p className="text-center">{businessName?.trim() || 'Billar'}</p>
-      <p className="mt-1 text-center">{data.cutType === 'shift' ? 'CORTE DE TURNO' : 'CORTE DEL DÍA'}</p>
+      <p className="mt-1 text-center">{data.cutType === 'shift' ? 'CORTE DE TURNO' : 'CORTE DEL DIA'}</p>
       <p className="my-1">------------------------</p>
       <p>Folio: CUT-{data.id.slice(0, 4).toUpperCase()}</p>
-      <p>Tipo: {data.cutType === 'shift' ? 'Turno' : 'Día'}</p>
+      <p>Tipo: {data.cutType === 'shift' ? 'Turno' : 'Dia'}</p>
       <p>Fecha: {date(data.endedAt)}</p>
       <p>Inicio: {time(data.startedAt)}</p>
       <p>Fin: {time(data.endedAt)}</p>
-      <p>Cajero: {data.cashierEmail || '—'}</p>
+      <p>Cajero: {data.cashierEmail || '-'}</p>
       <p className="my-1">------------------------</p>
       <p className="font-bold">RESUMEN</p>
       <p>Ventas: {data.totalOrders}</p>
